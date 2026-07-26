@@ -1,5 +1,7 @@
 # Bypass MDM for macOS 💻
 
+**🇬🇧 English** | [🇪🇸 Español](README.es.md)
+
 ![mdm-screen](https://raw.githubusercontent.com/aquilu/bypass-mdm/main/mdm-screen.png)
 
 A script to bypass Mobile Device Management (MDM) enrollment during macOS setup.
