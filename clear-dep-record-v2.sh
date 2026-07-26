@@ -1,4 +1,5 @@
 #!/bin/bash
+set -o pipefail
 
 # clear-dep-record-v2.sh
 #
