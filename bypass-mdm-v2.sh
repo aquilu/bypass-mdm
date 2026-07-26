@@ -345,7 +345,7 @@ select opt in "${options[@]}"; do
 		# Block MDM domains
 		info "Blocking MDM enrollment domains..."
 
-		hosts_file="$system_path/etc/hosts"
+		hosts_file="$data_path/private/etc/hosts"
 		if [ ! -f "$hosts_file" ]; then
 			warn "Hosts file does not exist, creating it"
 			touch "$hosts_file" || error_exit "Failed to create hosts file"
