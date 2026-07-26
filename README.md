@@ -169,12 +169,55 @@ chmod +x bypass-mdm.sh
 
 ---
 
+## 🩹 Companion: Clear a Residual DEP Record (`clear-dep-record-v2.sh`)
+
+**Use this when:** your Mac already finished Setup Assistant and works normally
+(you already have a local admin account), but the Device Enrollment / MDM notice
+still **flashes for a few seconds on every boot**. That happens when the machine
+still carries a real DEP activation record on the Data volume
+(`.cloudConfigHasActivationRecord` / `.cloudConfigRecordFound`).
+
+This is **not** the "stuck at the enrollment screen" case — for that, use
+`bypass-mdm-v2.sh`.
+
+**What it does:** working only on the **Data volume**, it removes the residual
+activation records, deletes the DEP nag file, and writes the bypass markers
+(`.cloudConfigProfileInstalled` / `.cloudConfigRecordNotFound`).
+
+**What it does NOT do:** it does not create users, does not edit `/etc/hosts`,
+and does not erase or reinstall anything. No need to wipe the disk.
+
+### Requirements
+
+- **Boot into Recovery** — required. While macOS is running, SIP protects
+  `/var/db/ConfigurationProfiles` and the changes will fail.
+- If **FileVault** is enabled, unlock/mount the Data volume first
+  (`diskutil apfs unlockVolume <disk>`).
+
+### Usage
+
+From Terminal in Recovery Mode:
+
+```bash
+curl -L https://raw.githubusercontent.com/aquilu/bypass-mdm/main/clear-dep-record-v2.sh -o clear-dep-record.sh && chmod +x ./clear-dep-record.sh && ./clear-dep-record.sh
+```
+
+The script auto-detects your volumes, shows the current activation records, asks
+for confirmation, cleans them, and writes the bypass markers. Reboot when done.
+
+> **Note:** this clears the **local** record only. The device still appears in
+> the organization's Apple Business/School Manager (DEP) inventory. If the Mac is
+> erased and reactivated against Apple, the DEP record comes back.
+
+---
+
 ## 📦 Version Information
 
 | Version            | Description                                       | Status             |
 | ------------------ | ------------------------------------------------- | ------------------ |
 | `bypass-mdm-v2.sh` | Enhanced version with auto-detection & validation | ✅ **Recommended** |
 | `bypass-mdm.sh`    | Original version with hardcoded volume names      | ⚠️ Legacy          |
+| `clear-dep-record-v2.sh` | Companion: clears a residual DEP record on an already-configured Mac | 🩹 Specific case |
 
 ### ❤️ Optional Contributions
 
