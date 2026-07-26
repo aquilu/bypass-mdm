@@ -231,6 +231,49 @@ for confirmation, cleans them, and writes the bypass markers. Reboot when done.
 
 ---
 
+## 🚀 Advanced: `bypass-mdm-v3.sh` (two-mode, SSV / FileVault / daemon hardened)
+
+> ⚠️ **Field-testing status:** v3 passes syntax checks and code review but is
+> **pending real-world verification** on affected hardware. Prefer
+> `bypass-mdm-v2.sh` unless you specifically need v3's features and can test it on
+> a device you own.
+
+A standalone rewrite hardened for Apple Silicon + Signed System Volume (macOS 11
+Big Sur through macOS 26 "Tahoe"). It shares one enrollment-suppression core
+across **two modes**:
+
+- **Suppress enrollment only** — for a Mac that is *already set up* and just nags
+  you to enroll. Does **not** create any user; your accounts and data are untouched.
+- **Full bypass** — for a Mac *stuck at the Remote Management / Setup Assistant*
+  screen. Creates a temporary local admin + `.AppleSetupDone`, then suppresses.
+
+### What it adds over v2
+
+- Locates the Data volume by **APFS role** and unlocks FileVault automatically
+- Reads the org's own MDM host from the DEP record and blocks it (plus IPv6)
+- Disables the enrollment daemon (`com.apple.ManagedClient.enroll`) via a launchd
+  override on the Data volume — survives macOS updates
+- A **"Verify current state"** menu option to inspect markers / hosts / override
+
+### Requirements
+
+- **Boot into Recovery** (Apple Silicon: hold Power → Options → Utilities → Terminal)
+- If FileVault is on, the script prompts to unlock the Data volume
+
+### Usage
+
+From Terminal in Recovery Mode:
+
+```bash
+curl -L https://raw.githubusercontent.com/aquilu/bypass-mdm/main/bypass-mdm-v3.sh -o bypass-mdm-v3.sh && chmod +x ./bypass-mdm-v3.sh && ./bypass-mdm-v3.sh
+```
+
+> **Note:** Like all versions, this is **local** suppression only — the device
+> remains in the organization's DEP inventory. Never run `profiles renew` or
+> Erase All Content & Settings, both of which re-arm DEP.
+
+---
+
 ## 📦 Version Information
 
 | Version            | Description                                       | Status             |
