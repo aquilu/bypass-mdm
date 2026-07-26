@@ -6,7 +6,7 @@ A script to bypass Mobile Device Management (MDM) enrollment during macOS setup.
 
 ## 🚨 Update: February 3, 2026
 
-**Version 2 Now Available!** Due to the high number of requests and repreated issues reported, I've released a new version of the script with significant improvements:
+**Version 2 Now Available!** Due to the high number of requests and repeated issues reported, I've released a new version of the script with significant improvements:
 
 ### What's New in v2:
 
@@ -20,6 +20,22 @@ The instructions below use **v2 by default** (recommended). If you experience is
 
 ---
 
+## 🚨 Update: July 26, 2026
+
+**v2 hardened for Apple Silicon & modern macOS (up to macOS 26 "Tahoe").** Based on the community work in upstream PR #170, `bypass-mdm-v2.sh` now targets the **Data volume** correctly and survives OS updates:
+
+### What's New
+
+- **Signed System Volume (SSV) fix** — On Apple Silicon the OS boots from a sealed, read-only System snapshot. The live `/etc/hosts` and `ConfigurationProfiles` actually live on the **Data volume** (via the `/private` firmlink). v2 now writes everything there, so the block actually takes effect.
+- **FileVault support** — Finds the Data volume by **APFS role** (not by name) and unlocks it with `diskutil apfs unlockVolume`. Fixes the "Could not detect data volume" failure on Macs with FileVault on by default.
+- **Durable enrollment-daemon block** — Writes a launchd override on the Data volume disabling `com.apple.ManagedClient.enroll` (macOS 26 replaced `cloudconfigurationd`). It survives the System-volume reseal a macOS update performs, so the enrollment nag doesn't return after updating.
+- **Smarter domain blocking** — Reads the organization's own MDM host from the DEP record and blocks it too, adds `acmdm.apple.com`, and blocks IPv6 as well as IPv4 — while deliberately leaving `gdmf.apple.com` and `albert.apple.com` unblocked so Software Update and iMessage/FaceTime keep working.
+- **New `bypass-mdm-v3.sh`** — A standalone, two-mode variant (suppress-only for an already set-up Mac, or full bypass for a stuck Setup Assistant) with the same SSV / FileVault / daemon hardening.
+
+> **Note:** This remains **local** suppression. Your device's serial still lives in the organization's Apple Business/School Manager (DEP) inventory and can reappear after a factory reset or major reactivation. Never run `profiles renew` or Erase All Content & Settings.
+
+---
+
 ## ✨ Features
 
 - **🔍 Smart Volume Detection** - Automatically detects system and data volumes regardless of custom names
@@ -28,6 +44,10 @@ The instructions below use **v2 by default** (recommended). If you experience is
 - **🎯 UID Conflict Resolution** - Automatically finds available user IDs to avoid conflicts
 - **📊 Real-time Progress** - Color-coded status messages show exactly what's happening
 - **🔄 Duplicate Prevention** - Checks for existing entries to avoid duplicates
+- **🍎 Apple Silicon / SSV-aware** - Writes to the Data volume (via `/private`) so changes reach the running OS on sealed-System-Volume Macs
+- **🔓 FileVault Support** - Locates the Data volume by APFS role and unlocks it with `diskutil apfs unlockVolume`
+- **🧱 Durable Enrollment Block** - Disables the enrollment daemon via a launchd override on the Data volume, surviving macOS updates
+- **🌐 Smarter Domain Blocking** - Blocks the org's own MDM host + IPv6, while leaving `gdmf`/`albert` intact (keeps Software Update & iMessage working)
 
 ## ⚠️ Prerequisites
 
@@ -215,7 +235,8 @@ for confirmation, cleans them, and writes the bypass markers. Reboot when done.
 
 | Version            | Description                                       | Status             |
 | ------------------ | ------------------------------------------------- | ------------------ |
-| `bypass-mdm-v2.sh` | Enhanced version with auto-detection & validation | ✅ **Recommended** |
+| `bypass-mdm-v2.sh` | Hardened: SSV/Data-volume aware, FileVault unlock, durable daemon block, smart domain list | ✅ **Recommended** |
+| `bypass-mdm-v3.sh` | Two-mode (suppress-only / full bypass), APFS-role detection, macOS 11–26 | 🧪 Advanced |
 | `bypass-mdm.sh`    | Original version with hardcoded volume names      | ⚠️ Legacy          |
 | `clear-dep-record-v2.sh` | Companion: clears a residual DEP record on an already-configured Mac | 🩹 Specific case |
 
