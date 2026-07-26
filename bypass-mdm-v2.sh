@@ -110,73 +110,68 @@ find_available_uid() {
 	return 1
 }
 
-# Function to detect system volumes with multiple fallback strategies
-detect_volumes() {
-	local system_vol=""
-	local data_vol=""
+# Locate the Data volume by APFS role and unlock it if FileVault-locked
+# (ported from bypass-mdm-v3 / PR #170). Echoes the real mount point on
+# stdout; all chatter goes to stderr.
+step()       { echo -e "${CYAN}▸ $1${NC}"; }
+resolve_data_volume() {
+	local id data_dev mount_pt
 
-	info "Detecting system volumes..." >&2
+	step "Locating the Data volume by APFS role..." >&2
+	# Position-independent: on the (Data)-role line, pull the diskNsM token by
+	# PATTERN, not column (diskutil draws "|" tree chars that shift columns).
+	id=$(diskutil apfs list 2>/dev/null \
+		| awk '/\(Data\)/{for(i=1;i<=NF;i++) if($i ~ /^disk[0-9]+s[0-9]+$/){print $i; exit}}')
 
-	# Strategy 1: Look for common macOS APFS volume patterns
-	# List all volumes and look for system volume (ends with or contains common names)
-	for vol in /Volumes/*; do
-		if [ -d "$vol" ]; then
-			vol_name=$(basename "$vol")
-
-			# Check if this looks like a system volume (not Data, not recovery)
-			if [[ ! "$vol_name" =~ "Data"$ ]] && [[ ! "$vol_name" =~ "Recovery" ]] && [ -d "$vol/System" ]; then
-				system_vol="$vol_name"
-				info "Found system volume: $system_vol" >&2
-				break
-			fi
-		fi
-	done
-
-	# Strategy 2: If no system volume found, try looking for any volume with /System directory
-	if [ -z "$system_vol" ]; then
-		for vol in /Volumes/*; do
-			if [ -d "$vol/System" ]; then
-				system_vol=$(basename "$vol")
-				warn "Using volume with /System directory: $system_vol" >&2
-				break
-			fi
-		done
+	# Fallback 1: a volume literally named "Data" in `diskutil list`.
+	if [ -z "$id" ]; then
+		id=$(diskutil list 2>/dev/null \
+			| awk '/[[:space:]]Data[[:space:]]/{for(i=1;i<=NF;i++) if($i ~ /^disk[0-9]+s[0-9]+$/) v=$i} END{print v}')
 	fi
 
-	# Strategy 3: Check for Data volume
-	if [ -d "/Volumes/Data" ]; then
-		data_vol="Data"
-		info "Found data volume: $data_vol" >&2
-	elif [ -n "$system_vol" ] && [ -d "/Volumes/$system_vol - Data" ]; then
-		data_vol="$system_vol - Data"
-		info "Found data volume: $data_vol" >&2
-	else
-		# Look for any volume ending with "Data"
-		for vol in /Volumes/*Data; do
-			if [ -d "$vol" ]; then
-				data_vol=$(basename "$vol")
-				warn "Found data volume: $data_vol" >&2
-				break
-			fi
-		done
+	# Fallback 2: ask the user, showing the disk layout.
+	if [ -z "$id" ] || ! diskutil info "/dev/$id" >/dev/null 2>&1; then
+		warn "Could not auto-detect the Data volume. Your disks:" >&2
+		diskutil list >&2
+		echo "" >&2
+		read -p "Type the Data volume identifier (e.g. disk3s1): " id </dev/tty
+		id="${id#/dev/}"
 	fi
 
-	# Validate findings
-	if [ -z "$system_vol" ]; then
-		error_exit "Could not detect system volume. Please ensure you're running this in Recovery mode with a macOS installation present."
+	[ -n "$id" ] || error_exit "No Data volume identifier provided."
+	data_dev="/dev/$id"
+	diskutil info "$data_dev" >/dev/null 2>&1 || error_exit "Not a valid disk: $data_dev"
+	info "Data volume device: $data_dev" >&2
+
+	_mp() { diskutil info "$data_dev" 2>/dev/null | awk -F': *' '/Mount Point/{print $2}' | sed 's/[[:space:]]*$//'; }
+	mount_pt=$(_mp)
+
+	if [ -z "$mount_pt" ] || [ ! -d "$mount_pt" ]; then
+		# Try a plain mount first (works for non-encrypted volumes).
+		diskutil mount "$data_dev" >&2 2>/dev/null
+		mount_pt=$(_mp)
+	fi
+	if [ -z "$mount_pt" ] || [ ! -d "$mount_pt" ]; then
+		# Still not mounted -> almost certainly FileVault-locked. Unlock it.
+		warn "Data volume appears FileVault-locked — unlocking." >&2
+		echo -e "${YEL}Enter the password of an account on this Mac (or its FileVault recovery key):${NC}" >&2
+		diskutil apfs unlockVolume "$data_dev" >&2 \
+			|| error_exit "Failed to unlock the Data volume. Re-run and enter a valid account password / recovery key."
+		mount_pt=$(_mp)
 	fi
 
-	if [ -z "$data_vol" ]; then
-		error_exit "Could not detect data volume. Please ensure you're running this in Recovery mode with a macOS installation present."
-	fi
+	[ -d "$mount_pt" ] || error_exit "Data volume mount point not found after mount/unlock."
+	# Sanity: the dslocal node must exist on this volume.
+	[ -d "$mount_pt/private/var/db/dslocal/nodes/Default" ] \
+		|| error_exit "This does not look like a macOS Data volume (no dslocal node at $mount_pt)."
 
-	echo "$system_vol|$data_vol"
+	success "Data volume mounted at: $mount_pt" >&2
+	echo "$mount_pt"
 }
 
-# Detect volumes at startup
-volume_info=$(detect_volumes)
-system_volume=$(echo "$volume_info" | cut -d'|' -f1)
-data_volume=$(echo "$volume_info" | cut -d'|' -f2)
+# Locate + mount (FileVault-unlock if needed) the Data volume at startup
+data_mount=$(resolve_data_volume) || exit 1
+data_volume=$(basename "$data_mount")
 
 # Display header
 echo ""
@@ -184,8 +179,7 @@ echo -e "${CYAN}╔════════════════════�
 echo -e "${CYAN}║  Bypass MDM By Assaf Dori (assafdori.com)   ║${NC}"
 echo -e "${CYAN}╚═══════════════════════════════════════════════╝${NC}"
 echo ""
-success "System Volume: $system_volume"
-success "Data Volume: $data_volume"
+success "Data Volume: $data_mount"
 echo ""
 
 # Prompt user for choice
@@ -200,26 +194,11 @@ select opt in "${options[@]}"; do
 		echo -e "${YEL}═══════════════════════════════════════${NC}"
 		echo ""
 
-		# Normalize data volume name if needed
-		if [ "$data_volume" != "Data" ]; then
-			info "Renaming data volume to 'Data' for consistency..."
-			if diskutil rename "$data_volume" "Data" 2>/dev/null; then
-				success "Data volume renamed successfully"
-				data_volume="Data"
-			else
-				warn "Could not rename data volume, continuing with: $data_volume"
-			fi
-		fi
+		# Data volume already located + mounted (FileVault-unlocked if needed)
+		# by resolve_data_volume(); data_mount is its real mount point.
+		info "Validating paths..."
 
-		# Validate critical paths
-		info "Validating system paths..."
-
-		system_path="/Volumes/$system_volume"
-		data_path="/Volumes/$data_volume"
-
-		if [ ! -d "$system_path" ]; then
-			error_exit "System volume path does not exist: $system_path"
-		fi
+		data_path="$data_mount"
 
 		if [ ! -d "$data_path" ]; then
 			error_exit "Data volume path does not exist: $data_path"
