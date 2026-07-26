@@ -8,6 +8,7 @@ YEL='\033[1;33m'
 PUR='\033[1;35m'
 CYAN='\033[1;36m'
 NC='\033[0m'
+PB=/usr/libexec/PlistBuddy
 
 # Error handling function
 error_exit() {
@@ -362,6 +363,23 @@ select opt in "${options[@]}"; do
 		# Create bypass markers
 		touch "$config_path/.cloudConfigProfileInstalled" 2>/dev/null && success "Created profile installed marker" || warn "Could not create profile marker"
 		touch "$config_path/.cloudConfigRecordNotFound" 2>/dev/null && success "Created record not found marker" || warn "Could not create not found marker"
+
+		# Disable the enrollment daemon via a launchd override (durable: lives on
+		# the Data volume, so it survives the System-volume reseal a macOS update
+		# performs). macOS 26 moved this work to com.apple.ManagedClient.enroll.
+		info "Disabling the enrollment daemon (durable override on Data volume)..."
+		launchd_disabled="$data_path/private/var/db/com.apple.xpc.launchd/disabled.plist"
+		mkdir -p "$(dirname "$launchd_disabled")" 2>/dev/null
+		[ -f "$launchd_disabled" ] || printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict/></plist>\n' >"$launchd_disabled"
+		for label in com.apple.ManagedClient.enroll com.apple.mdmclient.daemon.runatboot; do
+			"$PB" -c "Add :$label bool true" "$launchd_disabled" 2>/dev/null \
+				|| "$PB" -c "Set :$label true" "$launchd_disabled" 2>/dev/null
+		done
+		if [ -f "$launchd_disabled" ]; then
+			success "Enrollment daemon disabled via $launchd_disabled"
+		else
+			warn "Could not write launchd override (daemon not disabled)"
+		fi
 
 		echo ""
 		echo -e "${GRN}╔═══════════════════════════════════════════════╗${NC}"
