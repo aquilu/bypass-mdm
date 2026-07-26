@@ -322,21 +322,44 @@ select opt in "${options[@]}"; do
 		success "User account created successfully"
 		echo ""
 
-		# Block MDM domains
+		# Block MDM enrollment domains (SSV-aware; also blocks the org's own MDM
+		# host read from the DEP record, plus IPv6). Reads the record here, before
+		# it is removed later in this flow.
 		info "Blocking MDM enrollment domains..."
-
 		hosts_file="$data_path/private/etc/hosts"
-		if [ ! -f "$hosts_file" ]; then
-			warn "Hosts file does not exist, creating it"
-			touch "$hosts_file" || error_exit "Failed to create hosts file"
+		record_found="$data_path/private/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordFound"
+		mdm_host="" org=""
+		if [ -f "$record_found" ]; then
+			mdm_host=$(plutil -convert xml1 -o - "$record_found" 2>/dev/null \
+				| grep -ioE 'https?://[a-z0-9._-]+' | sed -E 's#https?://##' \
+				| sort -u | grep -viE '(^|\.)apple\.com$' | head -1)
+			org=$(plutil -convert xml1 -o - "$record_found" 2>/dev/null \
+				| grep -iA1 OrganizationName | tail -1 | sed -E 's/.*<string>(.*)<\/string>.*/\1/')
+			[ -n "$org" ]      && info "This device is assigned in Apple Business Manager to: $org"
+			[ -n "$mdm_host" ] && info "Org MDM server host: $mdm_host (will also be blocked)"
+		else
+			info "No activation record currently present."
 		fi
+		echo ""
 
-		# Check if entries already exist to avoid duplicates
-		grep -q "deviceenrollment.apple.com" "$hosts_file" 2>/dev/null || echo "0.0.0.0 deviceenrollment.apple.com" >>"$hosts_file"
-		grep -q "mdmenrollment.apple.com" "$hosts_file" 2>/dev/null || echo "0.0.0.0 mdmenrollment.apple.com" >>"$hosts_file"
-		grep -q "iprofiles.apple.com" "$hosts_file" 2>/dev/null || echo "0.0.0.0 iprofiles.apple.com" >>"$hosts_file"
-
-		success "MDM domains blocked in hosts file"
+		# --- Block the DEP / enrollment domains on the DATA volume's hosts file ---
+		step "Blocking DEP enrollment domains (Data-volume hosts file)"
+		[ -f "$hosts_file" ] || { mkdir -p "$(dirname "$hosts_file")"; touch "$hosts_file"; }
+		# iprofiles.apple.com = the device-side activation-record fetch (THE essential one).
+		# device/mdm-enrollment = server-side DEP API (harmless to include).
+		# acmdm = Apple cert/MDM endpoint. We deliberately DO NOT block:
+		#   gdmf.apple.com (breaks Software Update) or albert.apple.com (breaks iMessage/FaceTime).
+		block_domains=(iprofiles.apple.com deviceenrollment.apple.com mdmenrollment.apple.com acmdm.apple.com)
+		[ -n "$mdm_host" ] && block_domains+=("$mdm_host")
+		grep -q "Added by bypass-mdm" "$hosts_file" 2>/dev/null || {
+			echo "" >>"$hosts_file"
+			echo "# Added by bypass-mdm — DEP enrollment block" >>"$hosts_file"
+		}
+		for d in "${block_domains[@]}"; do
+			grep -qiE "[[:space:]]$d(\$|[[:space:]])" "$hosts_file" 2>/dev/null && { info "$d already blocked"; continue; }
+			printf '0.0.0.0 %s\n::      %s\n' "$d" "$d" >>"$hosts_file"
+			success "blocked $d"
+		done
 		echo ""
 
 		# Remove configuration profiles
