@@ -36,6 +36,30 @@ The instructions below use **v2 by default** (recommended). If you experience is
 
 ---
 
+## 🧭 Which one do I use?
+
+Three scripts, three situations:
+
+| Your situation | Use | What it does |
+| --- | --- | --- |
+| Mac **stuck** on the MDM / Remote Management enrollment screen | **`bypass-mdm-v2.sh`** (recommended) | Creates a temp admin, skips Setup Assistant, blocks enrollment, clears the DEP record |
+| Same as above, but the Mac has **FileVault**, is a recent Apple Silicon / macOS 26 machine, or you want a suppress-only mode | **`bypass-mdm-v3.sh`** (advanced, pending field-testing) | Everything v2 does, plus APFS-role detection, FileVault unlock, and two modes |
+| Mac **already set up and working**, but the enrollment notice **flashes for a second on every boot** | **`clear-dep-record-v2.sh`** | Only removes the leftover DEP record and sets the bypass markers — no user created, no `hosts` edits, nothing erased |
+| Old Mac where auto-detection fails and you know the exact volume names | **`bypass-mdm.sh`** (legacy) | Original script with hardcoded volume names |
+
+**In one line each:**
+
+- **v2** — "get me past the stuck enrollment screen." The default choice.
+- **v3** — "same, but hardened" (FileVault, macOS 26, two modes). Not yet field-tested.
+- **clear** — "just stop the boot-time flicker" on an already-working Mac. The gentlest one.
+
+> ⚠️ **All of them are _local_ suppression.** Your Mac's serial stays in the
+> organization's Apple Business/School Manager (DEP) inventory and can reappear
+> after a factory reset or reactivation against Apple. The permanent fix is the
+> owning organization releasing the serial.
+
+---
+
 ## ✨ Features
 
 - **🔍 Smart Volume Detection** - Automatically detects system and data volumes regardless of custom names
