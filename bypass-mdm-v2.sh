@@ -362,7 +362,7 @@ select opt in "${options[@]}"; do
 		# Remove configuration profiles
 		info "Configuring MDM bypass settings..."
 
-		config_path="$system_path/var/db/ConfigurationProfiles/Settings"
+		config_path="$data_path/private/var/db/ConfigurationProfiles/Settings"
 
 		# Create config directory if it doesn't exist
 		if [ ! -d "$config_path" ]; then
